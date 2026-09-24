@@ -49,12 +49,12 @@ Headless browser checks work with Playwright + SwiftShader (`--use-angle=swiftsh
 ## Roadmap (highest felt value first)
 
 1. **Online multiplayer**: the engine is already deterministic and action-based. Send actions, not state; seed the RNG from the server. Rooms plus a lobby.
-2. **Save/resume**: serialise `Game` (it's plain data plus the RNG state). Autosave each turn to localStorage.
+2. ~~**Save/resume**~~: done. `Game.toJSON()` / `Game.fromJSON()` (plain data plus the RNG state); the controller calls `onSave` at every `turn` event and main.js keeps it in localStorage (`conquest.save`) behind the menu's Continue button.
 3. **Richer 3D armies**: replace disc stacks with instanced soldier, cavalry and cannon models (GLTF made in Blender, or procedural). Add troop-march animation along paths when fortifying.
-4. **Threat overlay** (a key toggle): colour your borders by enemy pressure. `Board.setTint` already exists.
+4. ~~**Threat overlay**~~: done. `T` or the ◎ tool; `advisor.pressure()` rates borders and openings, `Board.setTint` fades the colours in.
 5. **Tutorial campaign**: scripted scenarios such as "Hold Australia" or "Break the bonus", using the advisor text.
 6. **Game options**: secret missions, capitals mode, fixed vs escalating card values, neutral armies in 2-player games, fog of war.
-7. **Stats screen**: territory-over-time chart from `game.history`, battle log, and a replay using the seeded RNG.
+7. **Stats screen**: the territory-over-time chart is done (`territoryChart` in hud.js). Still to do: battle log, and a replay using the seeded RNG.
 8. **AI personalities**: aggressive, turtle and opportunist variants on top of the levels. Monte-Carlo lookahead for Warlord.
 9. **Performance on low-end mobile**: a quality toggle (shadows off, bloom off, DPR 1).
 10. **Accessibility**: colour-blind palette plus patterns on tiles, a full keyboard territory cursor, screen-reader announcements for battle results.

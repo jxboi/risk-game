@@ -1,13 +1,16 @@
-// Small seeded PRNG so games (and tests) are reproducible.
+// Small seeded PRNG so games (and tests) are reproducible. The state is
+// exposed so a saved game resumes with exactly the same future dice.
 export function mulberry32(seed) {
   let a = seed >>> 0;
-  return function () {
+  const rng = function () {
     a = (a + 0x6d2b79f5) | 0;
     let t = a;
     t = Math.imul(t ^ (t >>> 15), t | 1);
     t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
+  Object.defineProperty(rng, 'state', { get: () => a, set: (v) => { a = v | 0; } });
+  return rng;
 }
 
 export function shuffle(arr, rng) {

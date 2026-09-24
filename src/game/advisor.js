@@ -175,3 +175,25 @@ export function lessons(g, p) {
   if (s.cardsTraded === 0) out.push('You never traded cards. Earning one card per turn adds up to big army bonuses.');
   return out;
 }
+
+// Threat overlay data for player p. Each of p's border territories gets a
+// pressure level from the strongest enemy stack next to it; enemy territories
+// p can take at 70%+ odds are marked as openings.
+export function pressure(g, p) {
+  const out = new Array(N).fill(null);
+  for (let t = 0; t < N; t++) {
+    if (g.owner[t] === p) {
+      const threat = threatTo(g, t);
+      if (!NEIGHBORS[t].some((n) => g.owner[n] !== p)) continue;
+      const ratio = threat / g.armies[t];
+      out[t] = { level: ratio >= 1.3 ? 'danger' : ratio >= 0.7 ? 'tense' : 'safe', ratio, threat };
+    } else {
+      let best = 0;
+      for (const n of NEIGHBORS[t]) {
+        if (g.owner[n] === p && g.armies[n] > 1) best = Math.max(best, battleOdds(g.armies[n] - 1, g.armies[t]).win);
+      }
+      if (best >= 0.7) out[t] = { level: 'opening', odds: best };
+    }
+  }
+  return out;
+}

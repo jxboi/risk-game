@@ -57,7 +57,25 @@ function loadSlots() {
 }
 function saveSlots(slots) { try { localStorage.setItem('conquest.slots', JSON.stringify(slots)); } catch { /* ignore */ } }
 
+// Autosave: written at the start of every turn, cleared when a game ends.
+const SAVE_KEY = 'conquest.save';
+function loadSave() {
+  try {
+    const save = JSON.parse(localStorage.getItem(SAVE_KEY));
+    if (!save) return null;
+    Game.fromJSON(save.game); // validate before offering it
+    return save;
+  } catch { return null; }
+}
+function writeSave(game, config) {
+  try {
+    if (game) localStorage.setItem(SAVE_KEY, JSON.stringify({ game: game.toJSON(), ...config, at: Date.now() }));
+    else localStorage.removeItem(SAVE_KEY);
+  } catch { /* storage full or blocked: play on without saving */ }
+}
+
 function showMenu() {
+  const save = loadSave();
   const slots = loadSlots().map((s) => ({ ...s }));
   const opts = { mode: 'classic', advisor: true, speed: 'normal' };
   try { Object.assign(opts, JSON.parse(localStorage.getItem('conquest.opts')) || {}); } catch { /* ignore */ }
@@ -82,7 +100,8 @@ function showMenu() {
         <label>AI speed <select id="speed"><option value="normal">Normal</option><option value="fast">Fast</option></select></label>
         <label class="check"><input type="checkbox" id="advisor"> Advisor tips</label>
       </div>
-      <button class="btn primary big" id="start">Start campaign</button>
+      ${save ? `<button class="btn primary big resume" id="resume">Continue campaign<small>${saveSummary(save.game)}</small></button>` : ''}
+      <button class="btn big${save ? '' : ' primary'}" id="start">${save ? 'New campaign' : 'Start campaign'}</button>
       <details class="howto"><summary>How to play</summary>
         <ol>
           <li><b>Reinforce:</b> you get armies each turn (territories ÷ 3, min 3) plus continent bonuses. Click your territories to place them.</li>
@@ -91,7 +110,7 @@ function showMenu() {
           <li>Capture a territory to earn a <b>card</b>. Trade three matching or three different cards for bonus armies.</li>
           <li>Hold a whole continent for its bonus every turn. Guard its entry points.</li>
         </ol>
-        <p>Controls: drag to pan, scroll or pinch to zoom, right-drag to tilt. Keys: <kbd>Space</kbd> next step, <kbd>B</kbd> blitz, <kbd>R</kbd> roll once, <kbd>H</kbd> hint, <kbd>Esc</kbd> cancel.</p>
+        <p>Controls: drag to pan, scroll or pinch to zoom, right-drag to tilt. Keys: <kbd>Space</kbd> next step, <kbd>B</kbd> blitz, <kbd>R</kbd> roll once, <kbd>H</kbd> hint, <kbd>T</kbd> threat overlay, <kbd>Esc</kbd> cancel. Games autosave at the start of every turn.</p>
       </details>
     </div>`;
   document.body.appendChild(el);
@@ -116,6 +135,12 @@ function showMenu() {
   mode.value = opts.mode; speed.value = opts.speed; adv.checked = opts.advisor;
   sync();
 
+  el.querySelector('#resume')?.addEventListener('click', () => {
+    audio.unlock();
+    el.remove();
+    startGame(save.slots, save.opts, Game.fromJSON(save.game));
+  });
+
   el.querySelector('#start').addEventListener('click', () => {
     audio.unlock();
     opts.mode = mode.value; opts.speed = speed.value; opts.advisor = adv.checked;
@@ -126,7 +151,13 @@ function showMenu() {
   });
 }
 
-function startGame(slots, opts) {
+function saveSummary(g) {
+  const human = g.players.find((p) => p.human && p.alive) ?? g.players[g.current];
+  const held = g.owner.filter((o) => o === human.id).length;
+  return `${MODES[g.mode].name} · round ${Math.max(1, g.round)} · ${human.name}: ${held} territories`;
+}
+
+function startGame(slots, opts, resumed = null) {
   lastConfig = { slots, opts };
   const players = slots
     .map((s, i) => ({ ...s, i }))
@@ -134,14 +165,16 @@ function startGame(slots, opts) {
     .map((s) => ({
       name: s.name, color: PALETTE[s.i].color, human: s.type === 'human', level: s.type === 'human' ? 'soldier' : s.type,
     }));
-  const game = new Game({ players, mode: opts.mode, seed: (Math.random() * 2 ** 31) | 0 });
-  const cssColors = players.map((p) => `#${p.color.toString(16).padStart(6, '0')}`);
-  mountBoard(players.map((p) => p.color));
+  const game = resumed || new Game({ players, mode: opts.mode, seed: (Math.random() * 2 ** 31) | 0 });
+  const cssColors = game.players.map((p) => `#${p.color.toString(16).padStart(6, '0')}`);
+  mountBoard(game.players.map((p) => p.color));
   hud = new Hud(app);
   labels = new Labels(hud.root, stage, board, cssColors);
   stage.fitView();
   controller = new Controller({
-    game, stage, board, fx, hud, labels, options: opts,
+    game, stage, board, fx, hud, labels, options: opts, resumed: !!resumed,
+    // A new game replaces any older save once its first turn starts.
+    onSave: (g) => writeSave(g, { slots, opts }),
     onExit: (why) => {
       controller.destroy();
       hud.destroy();

@@ -38,7 +38,7 @@ export class Board {
       pulse: 0, // 0 none, 1 source, 2 target
       flip: null, // conquest ripple {t, dur, from: Color, origin: Vector3}
       bump: 0, // quick vertical kick on hits
-      tint: null, // threat overlay color
+      tintK: 0, tintTarget: 0, tintColor: new THREE.Color(), // threat overlay
     }));
 
     this.buildOcean();
@@ -245,7 +245,13 @@ export class Board {
     v.glowTarget = glow; v.dimTarget = dim; v.liftTarget = lift; v.pulse = pulse;
     if (color !== undefined) v.glowColor.set(color);
   }
-  setTint(ti, color) { this.tv[ti].tint = color == null ? null : new THREE.Color(color); }
+  // Overlay tint; fades in and out rather than snapping.
+  setTint(ti, color, strength = 0.55) {
+    const v = this.tv[ti];
+    if (color == null) { v.tintTarget = 0; return; }
+    v.tintColor.set(color);
+    v.tintTarget = strength;
+  }
 
   // ---- per-frame -----------------------------------------------------------
   writeCell(i, yOff, color) {
@@ -269,6 +275,7 @@ export class Board {
       v.lift += (v.liftTarget - v.lift) * k;
       v.glow += (v.glowTarget - v.glow) * k;
       v.dim += (v.dimTarget - v.dim) * k;
+      v.tintK += (v.tintTarget - v.tintK) * k;
       v.bump *= Math.pow(0.0005, dt);
       const tok = this.tokens[ti];
 
@@ -292,7 +299,7 @@ export class Board {
           if (lt > 0 && lt < 1) y += Math.sin(lt * Math.PI) * 0.9;
         }
         tmpC.lerp(cont, 0.12).multiplyScalar(b.jitter);
-        if (v.tint) tmpC.lerp(v.tint, 0.55);
+        if (v.tintK > 0.002) tmpC.lerp(v.tintColor, v.tintK);
         if (glow > 0.001) tmpC.lerp(v.glowColor, glow * 0.45).multiplyScalar(1 + glow * 0.5);
         if (v.dim > 0.001) tmpC.multiplyScalar(1 - v.dim * 0.55);
         this.writeCell(i, y, tmpC);

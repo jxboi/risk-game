@@ -11,6 +11,7 @@ export const N = TERRITORIES.length;
 export const CARD_TYPES = ['Infantry', 'Cavalry', 'Artillery', 'Wild'];
 const START_ARMIES = { 2: 40, 3: 35, 4: 30 };
 const TRADE_VALUES = [4, 6, 8, 10, 12, 15];
+const SAVE_VERSION = 1;
 
 export const MODES = {
   classic: { name: 'World Domination', goal: N },
@@ -406,6 +407,28 @@ export class Game {
     } while (!this.players[this.current].alive);
     this.startTurn(this.current <= prev);
     return true;
+  }
+
+  // ---- save / resume ----------------------------------------------------
+  // Plain data plus the RNG state: a restored game rolls the same dice.
+  toJSON() {
+    const keys = [
+      'mode', 'goal', 'players', 'owner', 'armies', 'turn', 'round', 'current', 'phase',
+      'reinforcements', 'tradeCount', 'conqueredThisTurn', 'pendingOccupy', 'resumeAttack',
+      'winner', 'history', 'turnLog', 'deck', 'discard',
+    ];
+    const out = { v: SAVE_VERSION, rng: this.rng.state };
+    for (const k of keys) out[k] = this[k];
+    return JSON.parse(JSON.stringify(out));
+  }
+
+  static fromJSON(data) {
+    if (!data || data.v !== SAVE_VERSION || data.owner?.length !== N) throw new Error('Incompatible save');
+    const g = new Game({ players: data.players, seed: 0, mode: data.mode });
+    const { v, rng, ...rest } = JSON.parse(JSON.stringify(data));
+    Object.assign(g, rest);
+    g.rng.state = rng;
+    return g;
   }
 
   checkWin() {

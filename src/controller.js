@@ -8,17 +8,25 @@
 
 import { TERRITORIES, CONTINENTS, CONTINENT_MEMBERS, NEIGHBORS } from './data/map.js';
 import { nextAction, applyAction } from './game/ai.js';
-import { forecast, tips, suggest, snapshot, debrief, lessons } from './game/advisor.js';
+import { forecast, tips, suggest, snapshot, debrief, lessons, pressure } from './game/advisor.js';
 import { audio } from './audio.js';
 import { toWorld } from './render/board.js';
+import { territoryChart } from './ui/hud.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
 const tname = (t) => TERRITORIES[t].name;
+const THREAT_COLORS = { danger: 0xff2a1f, tense: 0xffa21f, safe: 0x2fe08a, opening: 0x6fd8ff };
+const THREAT_LEGEND = [
+  ['danger', 'Outgunned', 'The enemy next door is stronger. Reinforce or fall back.'],
+  ['tense', 'Contested', 'Roughly even. One bad roll could lose it.'],
+  ['safe', 'Secure', 'You clearly outnumber every neighbour.'],
+  ['opening', 'Opening', 'An enemy territory you can take at 70%+ odds.'],
+].map(([k, label, tip]) => ({ color: `#${THREAT_COLORS[k].toString(16).padStart(6, '0')}`, label, tip }));
 
 export class Controller {
-  constructor({ game, stage, board, fx, hud, labels, options, onExit }) {
-    Object.assign(this, { game, stage, board, fx, hud, labels, options, onExit });
+  constructor({ game, stage, board, fx, hud, labels, options, onExit, onSave, resumed = false }) {
+    Object.assign(this, { game, stage, board, fx, hud, labels, options, onExit, onSave });
     this.colors = game.players.map((p) => hex(p.color));
     this.queue = [];
     this.playing = false;
@@ -35,13 +43,16 @@ export class Controller {
     this.turnStart = null;
     this.aiRunning = false;
     this.destroyed = false;
+    this.threatOn = false;
+    if (resumed && game.player.human) this.turnStart = snapshot(game, game.current);
 
     for (let t = 0; t < TERRITORIES.length; t++) board.setTerritory(t, game.owner[t], game.armies[t]);
 
     this.unsub = game.on((type, data) => this.onEvent(type, data));
     this.bindInput();
     this.refresh();
-    this.hud.showBanner('Deploy your forces', 'Place your starting armies', '#ffd27a', true, 1800);
+    if (resumed) this.hud.showBanner('Campaign resumed', `Round ${Math.max(1, game.round)} · ${game.player.name} to move`, this.colors[game.current], true, 1800);
+    else this.hud.showBanner('Deploy your forces', 'Place your starting armies', '#ffd27a', true, 1800);
     this.kick();
   }
 
@@ -68,7 +79,10 @@ export class Controller {
       this.streak = 0;
       this.placeStep = 0;
       if (g.player.human) this.turnStart = snapshot(g, g.current);
+      // Autosave at the start of every turn: the state is clean and complete.
+      this.onSave?.(g);
     }
+    if (type === 'gameover') this.onSave?.(null);
     if (type === 'endTurn' && g.player.human && this.turnStart) {
       data.debrief = debrief(g, g.current, this.turnStart, data.log);
     }
@@ -274,6 +288,7 @@ export class Controller {
     el.innerHTML = `<div class="card-panel">
       <div class="gtitle" style="color:${this.colors[winner]}">${humanWon ? (this.humanCount() > 1 ? `${w.name} conquers the world` : 'Victory') : `${w.name} wins`}</div>
       <div class="gsub">${g.round} rounds</div>
+      ${territoryChart(g.history, this.colors, g.players.map((p) => p.name), g.goal)}
       <table class="stats"><tr><th>Player</th><th>Peak land</th><th>Destroyed</th><th>Lost</th><th>Dice luck</th><th></th></tr>${rows}</table>
       <div class="lessons"><b>Lessons for ${viewer.name}</b><ul>${tips}</ul></div>
       <div class="row"><button class="btn primary" data-a="again">Play again</button><button class="btn" data-a="menu">Main menu</button></div></div>`;
@@ -344,8 +359,9 @@ export class Controller {
   key(e) {
     // Never steal keys from focused interface elements.
     if (e.target.closest?.('input, textarea, select, button')) return;
-    if (!this.humanTurn) return;
     const k = e.key.toLowerCase();
+    if (k === 't' && !e.repeat) { e.preventDefault(); this.toggleThreat(); return; }
+    if (!this.humanTurn) return;
     const map = {
       escape: () => this.deselect(),
       h: () => this.doSuggest(),
@@ -472,9 +488,28 @@ export class Controller {
   }
 
   // ---- highlights + HUD ------------------------------------------------------------
+  toggleThreat() {
+    this.threatOn = !this.threatOn;
+    audio.select();
+    this.refresh();
+  }
+
+  // Threat overlay: tint the viewer's borders by enemy pressure and mark the
+  // enemy territories they can take at good odds.
+  applyThreat() {
+    const pr = this.threatOn && this.game.phase !== 'over' ? pressure(this.game, this.viewer) : null;
+    for (let t = 0; t < TERRITORIES.length; t++) {
+      if (!pr) this.board.setTint(t, null);
+      else if (pr[t]) this.board.setTint(t, THREAT_COLORS[pr[t].level], 0.72);
+      else this.board.setTint(t, 0x1c2434, 0.75); // wash out everything else
+    }
+    this.hud.setLegend(this.threatOn ? THREAT_LEGEND : null);
+  }
+
   applyHighlights() {
     const g = this.game, b = this.board;
     b.clearHighlights();
+    this.applyThreat();
     if (!this.humanTurn) return;
     const me = g.current;
     const hov = this.hover;
@@ -605,8 +640,9 @@ export class Controller {
       { icon: '💡', title: 'Advisor', on: this.advisorOn, onClick: () => { this.advisorOn = !this.advisorOn; this.refresh(); } },
       { icon: audio.muted ? '🔇' : '🔊', title: 'Sound', on: !audio.muted, onClick: () => { audio.setMuted(!audio.muted); this.refresh(); } },
       { icon: '♫', title: 'Music', on: audio.musicOn, onClick: () => { audio.setMusic(!audio.musicOn); this.refresh(); } },
+      { icon: '◎', title: 'Threat overlay (T)', on: this.threatOn, onClick: () => this.toggleThreat() },
       { icon: '⌖', title: 'Reset view', onClick: () => this.stage.fitView() },
-      { icon: '☰', title: 'Menu', onClick: () => { if (confirm('Leave this game?')) this.onExit('menu'); } },
+      { icon: '☰', title: 'Menu', onClick: () => { if (this.game.phase === 'setup' ? confirm('Leave this game? Deployment is not saved yet.') : confirm('Leave this game? It is saved at the start of every turn, so you can continue it from the menu.')) this.onExit('menu'); } },
     ]);
   }
 

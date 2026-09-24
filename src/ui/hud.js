@@ -28,7 +28,8 @@ export class Hud {
     this.toasts = h('div', 'toasts');
     this.tooltip = h('div', 'forecast hidden');
     this.tools = h('div', 'tools');
-    for (const el of [this.players, this.phase, this.continents, this.side, this.dice, this.actions, this.banner, this.toasts, this.tooltip, this.tools]) {
+    this.legend = h('div', 'panel legend hidden');
+    for (const el of [this.players, this.phase, this.continents, this.legend, this.side, this.dice, this.actions, this.banner, this.toasts, this.tooltip, this.tools]) {
       this.root.appendChild(el);
     }
     this.bannerTimer = 0;
@@ -181,5 +182,33 @@ export class Hud {
     }
   }
 
+  // ---- threat overlay legend (replaces the continent tracker while on) -------
+  setLegend(items) {
+    const on = !!items;
+    this.legend.classList.toggle('hidden', !on);
+    this.continents.classList.toggle('hidden', on);
+    if (!on || this.legendItems === items) return;
+    this.legendItems = items;
+    this.legend.innerHTML = `<div class="title">Threat overlay<kbd>T</kbd></div>${items.map((it) => `
+      <div class="lrow" style="--c:${it.color}"><span class="chip"></span><b>${it.label}</b><small>${it.tip}</small></div>`).join('')}`;
+  }
+
   destroy() { this.root.remove(); }
+}
+
+// Territories held per player over the game, as an inline SVG line chart.
+// history: one array of counts per turn; colors: CSS colour per player.
+export function territoryChart(history, colors, names, goal) {
+  const W = 480, H = 150, pad = 4;
+  if (history.length < 2) return '';
+  const maxY = Math.max(goal, ...history.flat());
+  const x = (i) => pad + (i / (history.length - 1)) * (W - pad * 2);
+  const y = (v) => H - pad - (v / maxY) * (H - pad * 2);
+  const lines = colors.map((c, p) => {
+    const pts = history.map((row, i) => `${x(i).toFixed(1)},${y(row[p]).toFixed(1)}`).join(' ');
+    return `<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2.5" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round"><title>${names[p]}</title></polyline>`;
+  }).join('');
+  const goalLine = `<line x1="${pad}" x2="${W - pad}" y1="${y(goal)}" y2="${y(goal)}" class="goal" vector-effect="non-scaling-stroke"/>`;
+  return `<figure class="chart"><figcaption>Territories held, turn by turn <span>(dashed line: goal)</span></figcaption>
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="Territories held over time">${goalLine}${lines}</svg></figure>`;
 }

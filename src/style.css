@@ -208,3 +208,28 @@ select option { background: #0b1628; }
   .card { width: 48px; height: 62px; }
   .slider input { width: 110px; }
 }
+
+/* ---------- threat overlay legend ---------- */
+.legend { position: absolute; left: 12px; bottom: 12px; padding: 8px 10px; width: 240px; display: flex; flex-direction: column; gap: 6px; }
+.lrow { display: grid; grid-template-columns: 12px auto; gap: 0 8px; align-items: center; font-size: 12px; }
+.lrow small { grid-column: 2; color: var(--muted); font-size: 11px; line-height: 1.3; }
+
+/* ---------- game over chart ---------- */
+.chart { margin: 0 0 14px; }
+.chart figcaption { font: 600 11px var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+.chart figcaption span { text-transform: none; letter-spacing: 0; font-family: var(--body); opacity: 0.8; }
+.chart svg { width: 100%; height: 130px; display: block; background: rgba(255,255,255,0.03); border-radius: 8px; }
+.chart .goal { stroke: rgba(255,210,122,0.45); stroke-width: 1; stroke-dasharray: 4 4; }
+
+/* ---------- menu: continue ---------- */
+.resume { margin-bottom: 14px; }
+.resume small { display: block; font: 500 12px var(--body); text-transform: none; letter-spacing: 0; opacity: 0.75; margin-top: 2px; }
+
+@media (max-width: 1100px) {
+  .legend { bottom: auto; top: 200px; }
+}
+@media (max-width: 760px) {
+  .legend { top: 134px; left: 8px; width: auto; padding: 5px 8px; flex-direction: row; flex-wrap: wrap; gap: 4px 10px; opacity: 0.92; }
+  .legend .title, .lrow small { display: none; }
+  .lrow { font-size: 11px; }
+}
