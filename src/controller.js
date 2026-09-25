@@ -12,6 +12,7 @@ import { forecast, tips, suggest, snapshot, debrief, lessons, pressure } from '.
 import { audio } from './audio.js';
 import { toWorld } from './render/board.js';
 import { territoryChart } from './ui/hud.js';
+import { ask } from './ui/dialog.js';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
@@ -675,8 +676,23 @@ export class Controller {
       { icon: '♫', title: 'Music', on: audio.musicOn, onClick: () => { audio.setMusic(!audio.musicOn); this.refresh(); } },
       { icon: '◎', title: 'Threat overlay (T)', on: this.threatOn, onClick: () => this.toggleThreat() },
       { icon: '⌖', title: 'Reset view', onClick: () => this.stage.fitView() },
-      { icon: '☰', title: 'Menu', onClick: () => { if (this.game.phase === 'setup' ? confirm('Leave this game? Deployment is not saved yet.') : confirm('Leave this game? It is saved at the start of every turn, so you can continue it from the menu.')) this.onExit('menu'); } },
+      { icon: '☰', title: 'Menu', onClick: () => this.askExit() },
     ]);
+  }
+
+  async askExit() {
+    const setup = this.game.phase === 'setup';
+    const leave = await ask({
+      title: 'Leave the war room?',
+      body: setup
+        ? 'Your deployment hasn’t been saved yet. Leave now and this campaign is lost.'
+        : 'The campaign is saved at the start of every turn. Pick it up any time from the title screen.',
+      ok: setup ? 'Abandon' : 'Leave',
+      cancel: 'Keep playing',
+      color: `#${this.game.player.color.toString(16).padStart(6, '0')}`,
+      danger: setup,
+    });
+    if (leave) this.onExit('menu');
   }
 
   autoDeploy() {

@@ -83,6 +83,26 @@ function writeSave(game, config) {
   } catch { /* storage full or blocked: play on without saving */ }
 }
 
+// Types a commander can be, in the order the ‹ › arrows step through them.
+const ROLES = ['human', ...Object.keys(LEVELS)];
+const cssHex = (c) => `#${c.toString(16).padStart(6, '0')}`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+// Heraldic crest: a hex shield in the commander's colour, with a star for a
+// human and rank chevrons (one per level) for an AI.
+function crest(type) {
+  const rank = type === 'human' ? -1 : LEVELS[type]?.rank ?? 0;
+  const mark = rank < 0
+    ? '<path class="mark" d="M32 17l4.1 8.6 9.4 1.2-6.9 6.5 1.8 9.3L32 38.1l-8.4 4.5 1.8-9.3-6.9-6.5 9.4-1.2z"/>'
+    : Array.from({ length: rank + 1 }, (_, k) => {
+      const y = 40 - k * 7 + rank * 3.5;
+      return `<path class="mark" d="M20 ${y}l12-7 12 7v-5l-12-7-12 7z"/>`;
+    }).join('');
+  return `<svg viewBox="0 0 64 64" aria-hidden="true">
+    <path class="shield" d="M32 3l25 14.5v29L32 61 7 46.5v-29z"/>
+    <path class="rim" d="M32 9l20 11.6v22.8L32 55 12 43.4V20.6z"/>${mark}</svg>`;
+}
+
 function showMenu() {
   const save = loadSave();
   const slots = loadSlots().map((s) => ({ ...s }));
@@ -91,72 +111,129 @@ function showMenu() {
 
   const el = document.createElement('div');
   el.className = 'overlay menu';
-  const levelOpts = Object.entries(LEVELS).map(([k, v]) => `<option value="${k}">AI · ${v.name}</option>`).join('');
   el.innerHTML = `
-    <div class="card-panel">
+    <header class="hero">
       <div class="logo">CONQUEST<span>World Domination in 3D</span></div>
-      <div class="slots">${slots.map((s, i) => `
-        <div class="slot" style="--c:#${PALETTE[i].color.toString(16).padStart(6, '0')}">
-          <span class="chip"></span>
-          <input value="${s.name}" maxlength="14" data-i="${i}" aria-label="Player ${i + 1} name">
-          <select data-i="${i}" aria-label="Player ${i + 1} type">
-            <option value="human">Human</option>${levelOpts}${i >= 2 ? '<option value="off">No player</option>' : ''}
-          </select>
-          <span class="blurb" data-b="${i}"></span>
-        </div>`).join('')}</div>
-      <div class="optrow">
-        <label>Mode <select id="mode">${Object.entries(MODES).map(([k, m]) => `<option value="${k}">${m.name}${k === 'quick' ? ` (${m.goal} territories)` : ''}</option>`).join('')}</select></label>
-        <label>AI speed <select id="speed"><option value="normal">Normal</option><option value="fast">Fast</option></select></label>
-        <label class="check"><input type="checkbox" id="advisor"> Advisor tips</label>
+    </header>
+
+    <section class="screen title-screen">
+      ${save ? `<button class="btn primary big resume" id="resume">Continue campaign<small>${esc(saveSummary(save.game))}</small></button>` : ''}
+      <button class="btn big${save ? ' ghost' : ' primary'}" data-go="council">${save ? 'New campaign' : 'Start campaign'}</button>
+      <button class="linkbtn" data-go="briefing">How to play</button>
+    </section>
+
+    <section class="screen council hidden" aria-label="New campaign">
+      <div class="council-head">
+        <button class="back" data-go="title" aria-label="Back">‹</button>
+        <h2>Choose your rivals</h2>
       </div>
-      ${save ? `<button class="btn primary big resume" id="resume">Continue campaign<small>${saveSummary(save.game)}</small></button>` : ''}
-      <button class="btn big${save ? '' : ' primary'}" id="start">${save ? 'New campaign' : 'Start campaign'}</button>
-      <details class="howto"><summary>How to play</summary>
-        <ol>
-          <li><b>Reinforce:</b> you get armies each turn (territories ÷ 3, min 3) plus continent bonuses. Click your territories to place them.</li>
-          <li><b>Attack:</b> click one of your territories, then an adjacent enemy. <b>Blitz</b> fights until one side breaks. Check the win % before you commit.</li>
-          <li><b>Fortify:</b> move armies once along your own connected territories, then your turn ends.</li>
-          <li>Capture a territory to earn a <b>card</b>. Trade three matching or three different cards for bonus armies.</li>
-          <li>Hold a whole continent for its bonus every turn. Guard its entry points.</li>
-        </ol>
-        <p>Controls: drag to pan, scroll or pinch to zoom, right-drag to tilt. Keys: <kbd>Space</kbd> next step, <kbd>B</kbd> blitz, <kbd>R</kbd> roll once, <kbd>H</kbd> hint, <kbd>T</kbd> threat overlay, <kbd>Esc</kbd> cancel. Games autosave at the start of every turn.</p>
-      </details>
-    </div>`;
+      <div class="commanders">${slots.map((s, i) => `
+        <div class="cmdr" data-i="${i}" style="--c:${cssHex(PALETTE[i].color)}">
+          <div class="crest"></div>
+          <input class="cname" value="${esc(s.name)}" maxlength="14" spellcheck="false" aria-label="Player ${i + 1} name">
+          <div class="role">
+            <button class="step" data-d="-1" aria-label="Previous type">‹</button>
+            <span class="rlabel"></span>
+            <button class="step" data-d="1" aria-label="Next type">›</button>
+          </div>
+          <p class="blurb"></p>
+          ${i >= 2 ? `<button class="dismiss" aria-label="Remove ${esc(s.name)}">×</button>
+          <button class="enlist"><b>+</b>Add a rival</button>` : ''}
+        </div>`).join('')}</div>
+
+      <div class="modes" role="radiogroup" aria-label="Mode">${Object.entries(MODES).map(([k, m]) => `
+        <button class="mode" role="radio" data-mode="${k}">
+          <b>${m.name}</b><small>${k === 'quick' ? `First to ${m.goal} territories` : 'Conquer every territory'}</small>
+        </button>`).join('')}</div>
+
+      <div class="toggles">
+        <button class="toggle" id="speed" aria-pressed="false"><span>AI pace</span><b></b></button>
+        <button class="toggle" id="advisor" aria-pressed="false"><span>Advisor</span><b></b></button>
+      </div>
+
+      <button class="btn primary big" id="start">To war</button>
+    </section>
+
+    <section class="screen briefing hidden" aria-label="How to play">
+      <div class="council-head">
+        <button class="back" data-go="title" aria-label="Back">‹</button>
+        <h2>Field briefing</h2>
+      </div>
+      <ol class="orders">
+        <li><b>Reinforce</b>You get armies each turn (territories ÷ 3, min 3) plus continent bonuses. Tap your territories to place them.</li>
+        <li><b>Attack</b>Tap one of your territories, then an adjacent enemy. Blitz fights until one side breaks. Check the win % before you commit.</li>
+        <li><b>Fortify</b>Move armies once along your own connected territories, then your turn ends.</li>
+        <li><b>Cards</b>Capture a territory to earn a card. Trade three matching or three different for bonus armies.</li>
+        <li><b>Continents</b>Hold a whole continent for its bonus every turn. Guard its entry points.</li>
+      </ol>
+      <p class="fine">Drag to pan, pinch or scroll to zoom, right-drag to tilt. Keys: <kbd>Space</kbd> next step, <kbd>B</kbd> blitz, <kbd>R</kbd> roll once, <kbd>H</kbd> hint, <kbd>T</kbd> threat overlay, <kbd>Esc</kbd> cancel. Campaigns autosave at the start of every turn.</p>
+    </section>`;
   document.body.appendChild(el);
+
+  const go = (name) => {
+    el.querySelectorAll('.screen').forEach((sc) => sc.classList.toggle('hidden', !sc.classList.contains(name === 'title' ? 'title-screen' : name)));
+    el.classList.toggle('deep', name !== 'title');
+    el.scrollTop = 0;
+    audio.unlock();
+    audio.select();
+  };
+  el.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => go(b.dataset.go)));
 
   const sync = () => {
     slots.forEach((s, i) => {
-      el.querySelector(`[data-b="${i}"]`).textContent = s.type === 'human' ? 'Takes turns on this device' : s.type === 'off' ? '' : LEVELS[s.type].blurb;
-      el.querySelectorAll('.slot')[i].classList.toggle('off', s.type === 'off');
+      const card = el.querySelector(`.cmdr[data-i="${i}"]`);
+      const off = s.type === 'off';
+      card.classList.toggle('off', off);
+      card.classList.toggle('human', s.type === 'human');
+      if (off) return;
+      card.querySelector('.crest').innerHTML = crest(s.type);
+      card.querySelector('.rlabel').innerHTML = s.type === 'human' ? '<small>Human</small>Commander' : `<small>AI</small>${LEVELS[s.type].name}`;
+      card.querySelector('.blurb').textContent = s.type === 'human' ? 'Takes turns on this device.' : LEVELS[s.type].blurb;
     });
-    const n = slots.filter((s) => s.type !== 'off').length;
-    el.querySelector('#start').disabled = n < 2;
+    el.querySelector('#start').disabled = slots.filter((s) => s.type !== 'off').length < 2;
+    el.querySelectorAll('.mode').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.mode === opts.mode)));
+    const speed = el.querySelector('#speed'), adv = el.querySelector('#advisor');
+    speed.setAttribute('aria-pressed', String(opts.speed === 'fast'));
+    speed.querySelector('b').textContent = opts.speed === 'fast' ? 'Fast' : 'Normal';
+    adv.setAttribute('aria-pressed', String(opts.advisor));
+    adv.querySelector('b').textContent = opts.advisor ? 'On' : 'Off';
   };
-  el.querySelectorAll('select[data-i]').forEach((sel) => {
-    const i = +sel.dataset.i;
-    sel.value = slots[i].type;
-    sel.addEventListener('change', () => { slots[i].type = sel.value; sync(); });
+
+  el.querySelectorAll('.cmdr').forEach((card) => {
+    const i = +card.dataset.i;
+    const set = (type) => {
+      audio.unlock(); audio.select();
+      slots[i].type = type;
+      sync();
+      if (!fx?.reduced) { card.classList.remove('pulse'); void card.offsetWidth; card.classList.add('pulse'); }
+    };
+    card.querySelectorAll('.step').forEach((b) => b.addEventListener('click', () => {
+      const n = ROLES.length;
+      set(ROLES[(ROLES.indexOf(slots[i].type) + +b.dataset.d + n) % n]);
+    }));
+    card.querySelector('.dismiss')?.addEventListener('click', () => set('off'));
+    card.querySelector('.enlist')?.addEventListener('click', () => set('soldier'));
+    const input = card.querySelector('.cname');
+    input.addEventListener('input', () => { slots[i].name = input.value.trim() || `Player ${i + 1}`; });
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
   });
-  el.querySelectorAll('input[data-i]').forEach((inp) => {
-    inp.addEventListener('input', () => { slots[+inp.dataset.i].name = inp.value || `Player ${+inp.dataset.i + 1}`; });
-  });
-  const mode = el.querySelector('#mode'), speed = el.querySelector('#speed'), adv = el.querySelector('#advisor');
-  mode.value = opts.mode; speed.value = opts.speed; adv.checked = opts.advisor;
+  el.querySelectorAll('.mode').forEach((b) => b.addEventListener('click', () => { opts.mode = b.dataset.mode; sync(); }));
+  el.querySelector('#speed').addEventListener('click', () => { opts.speed = opts.speed === 'fast' ? 'normal' : 'fast'; sync(); });
+  el.querySelector('#advisor').addEventListener('click', () => { opts.advisor = !opts.advisor; sync(); });
   sync();
 
-  el.querySelector('#resume')?.addEventListener('click', () => {
+  const leave = (then) => {
     audio.unlock();
-    el.remove();
-    startGame(save.slots, save.opts, Game.fromJSON(save.game));
-  });
+    el.classList.add('out');
+    setTimeout(() => { el.remove(); then(); }, fx?.reduced ? 0 : 220);
+  };
+
+  el.querySelector('#resume')?.addEventListener('click', () => leave(() => startGame(save.slots, save.opts, Game.fromJSON(save.game))));
 
   el.querySelector('#start').addEventListener('click', () => {
-    audio.unlock();
-    opts.mode = mode.value; opts.speed = speed.value; opts.advisor = adv.checked;
     saveSlots(slots);
     try { localStorage.setItem('conquest.opts', JSON.stringify(opts)); } catch { /* ignore */ }
-    el.remove();
-    startGame(slots, opts);
+    leave(() => startGame(slots, opts));
   });
 }
 
