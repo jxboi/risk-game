@@ -33,6 +33,15 @@ export class Hud {
       this.root.appendChild(el);
     }
     this.bannerTimer = 0;
+    // The phase bar wraps on narrow screens, so the panels stacked under it
+    // follow its real height instead of a guessed one.
+    this.stack = new ResizeObserver(() => {
+      const bottom = (el) => el.offsetTop + el.offsetHeight;
+      this.root.style.setProperty('--below-phase', `${bottom(this.phase)}px`);
+      this.root.style.setProperty('--below-players', `${bottom(this.players)}px`);
+    });
+    this.stack.observe(this.phase);
+    this.stack.observe(this.players);
   }
 
   // ---- top-left: players -------------------------------------------------
@@ -128,7 +137,12 @@ export class Hud {
     this.tooltip.innerHTML = `<div class="odds">${Math.round(f.win * 100)}%</div>
       <div class="ftitle">${f.verdict}</div>
       <div class="fline">${f.attackers} ⚔ ${f.defenders} · expect to lose ~${f.expLoss.toFixed(1)}</div>`;
-    this.tooltip.style.transform = `translate(${pt.x}px, ${pt.y - 70}px) translate(-50%, -100%)`;
+    // Keep the whole card on screen, even for targets at the edge of the view.
+    const w = this.tooltip.offsetWidth, hgt = this.tooltip.offsetHeight, m = 8;
+    const x = Math.min(Math.max(pt.x - w / 2, m), innerWidth - w - m);
+    let y = pt.y - 70 - hgt;
+    if (y < m) y = pt.y + 30; // no room above: show it under the target
+    this.tooltip.style.transform = `translate(${x.toFixed(0)}px, ${y.toFixed(0)}px)`;
   }
   hideForecast() { this.tooltip.classList.add('hidden'); }
 
@@ -193,7 +207,7 @@ export class Hud {
       <div class="lrow" style="--c:${it.color}"><span class="chip"></span><b>${it.label}</b><small>${it.tip}</small></div>`).join('')}`;
   }
 
-  destroy() { this.root.remove(); }
+  destroy() { this.stack.disconnect(); this.root.remove(); }
 }
 
 // Territories held per player over the game, as an inline SVG line chart.
