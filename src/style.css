@@ -150,20 +150,21 @@ kbd { font: 600 10px var(--body); padding: 1px 5px; margin-left: 7px; border-rad
 
 /* ---------- overlays (menu, game over) ---------- */
 .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, rgba(3,10,22,0.35), rgba(3,10,22,0.85)); z-index: 10; padding: 16px; animation: fade 300ms; }
-.card-panel { background: rgba(8,18,34,0.88); border: 1px solid var(--panel-edge); border-radius: 18px; padding: 28px; width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; backdrop-filter: blur(14px); box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
+.card-panel { background: rgba(8,18,34,0.88); border: 1px solid var(--panel-edge); border-radius: 18px; padding: 28px; width: min(560px, 100%); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; backdrop-filter: blur(14px); box-shadow: 0 30px 80px rgba(0,0,0,0.6); }
 .logo { font: 700 64px var(--display); letter-spacing: 0.14em; text-align: center; background: linear-gradient(180deg, #fff 20%, var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent; line-height: 1; }
 .logo span { display: block; font-size: 15px; letter-spacing: 0.32em; color: var(--muted); -webkit-text-fill-color: var(--muted); margin: 8px 0 22px; text-transform: uppercase; }
 .slots { display: flex; flex-direction: column; gap: 8px; }
-.slot { display: grid; grid-template-columns: 14px 1fr 150px; grid-template-areas: "chip name type" ". blurb blurb"; gap: 4px 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.04); border-left: 3px solid var(--c); }
+.slot { display: grid; grid-template-columns: 14px minmax(0, 1fr) minmax(0, 150px); grid-template-areas: "chip name type" ". blurb blurb"; gap: 4px 10px; align-items: center; padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.04); border-left: 3px solid var(--c); }
 .slot.off { opacity: 0.45; }
 .slot .chip { grid-area: chip; }
-.slot input { grid-area: name; }
-.slot select { grid-area: type; }
+.slot input { grid-area: name; min-width: 0; width: 100%; }
+.slot select { grid-area: type; min-width: 0; width: 100%; }
 .slot .blurb { grid-area: blurb; font-size: 12px; color: var(--muted); }
 input, select { font: 500 14px var(--body); color: var(--text); background: rgba(0,0,0,0.3); border: 1px solid var(--panel-edge); border-radius: 8px; padding: 8px 10px; min-height: 38px; }
 select option { background: #0b1628; }
 .optrow { display: flex; gap: 14px; flex-wrap: wrap; margin: 16px 0; font-size: 13px; color: var(--muted); align-items: center; }
-.optrow label { display: flex; gap: 8px; align-items: center; }
+.optrow label { display: flex; gap: 8px; align-items: center; min-width: 0; max-width: 100%; }
+.optrow select { min-width: 0; flex: 1 1 auto; }
 .optrow .check input { min-height: 0; width: 18px; height: 18px; accent-color: var(--gold); }
 .howto { margin-top: 16px; font-size: 13px; color: #c6d3ea; line-height: 1.5; }
 .howto summary { cursor: pointer; font: 600 14px var(--display); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
@@ -197,21 +198,36 @@ select option { background: #0b1628; }
 }
 @media (max-width: 760px) {
   .cont { font-size: 14px; letter-spacing: 0.2em; }
-  .players { min-width: 0; top: 96px; left: 8px; padding: 3px; flex-direction: row; flex-wrap: wrap; }
+  .players { min-width: 0; top: calc(var(--below-phase, 88px) + 6px); left: max(8px, env(safe-area-inset-left)); padding: 3px; flex-direction: row; flex-wrap: wrap; }
   .prow { padding: 4px 6px; }
   .pname small, .pstat[title=Armies], .pstat[title=Cards], .conts { display: none; }
-  .phasebar { top: 8px; min-width: 0; width: calc(100vw - 16px); padding: 6px 10px; left: 8px; transform: none; }
-  .tools { top: auto; bottom: 120px; right: 8px; flex-direction: column; }
+  .phasebar { top: max(8px, env(safe-area-inset-top)); min-width: 0; left: max(8px, env(safe-area-inset-left)); right: max(8px, env(safe-area-inset-right)); padding: 6px 10px; transform: none; }
+  .tools { top: auto; bottom: 120px; right: max(8px, env(safe-area-inset-right)); flex-direction: column; gap: 5px; }
+  .tool { width: 36px; height: 36px; font-size: 15px; }
   .advisor { top: auto; bottom: 130px; left: 8px; right: 60px; width: auto; max-height: 30vh; }
-  .actions { bottom: 8px; min-width: 0; }
-  .dicebox { bottom: auto; top: 140px; right: 8px; }
-  .toasts { bottom: auto; top: 140px; right: 8px; left: 8px; align-items: stretch; }
+  /* Full width: centred with left: 50% it could only use half the screen and wrapped early. */
+  .actions { bottom: max(8px, env(safe-area-inset-bottom)); left: 8px; right: 8px; min-width: 0; max-width: none; transform: none; padding-bottom: 0; }
+  .dicebox { bottom: auto; top: calc(var(--below-players, 130px) + 8px); right: 8px; }
+  .toasts { bottom: auto; top: calc(var(--below-players, 130px) + 8px); right: 8px; left: 8px; align-items: stretch; }
   .btitle { font-size: 26px; white-space: normal; }
   .banner.big .btitle { font-size: 36px; }
-  .logo { font-size: 44px; }
-  .slot { grid-template-columns: 14px 1fr 120px; }
+  .card-panel { padding: 18px 14px; }
+  .logo { font-size: 38px; letter-spacing: 0.1em; }
+  .logo span { font-size: 11px; letter-spacing: 0.22em; margin: 6px 0 14px; }
+  .slot { grid-template-columns: 12px minmax(80px, 1fr) minmax(0, 150px); gap: 4px 8px; padding: 8px 10px; }
+  .slot .blurb { font-size: 11px; }
+  .optrow { margin: 12px 0; gap: 10px; }
+  .btn { font-size: 13px; padding: 8px 12px; }
+  .btn.big { font-size: 17px; padding: 12px 20px; }
+  /* 16px stops iOS Safari zooming the page when a field gets focus. */
+  input, select { font-size: 16px; }
   .card { width: 48px; height: 62px; }
   .slider input { width: 110px; }
+}
+
+/* Touch screens have no keyboard, so shortcut hints are noise. */
+@media (hover: none) and (pointer: coarse) {
+  kbd { display: none; }
 }
 
 /* ---------- threat overlay legend ---------- */
@@ -234,7 +250,29 @@ select option { background: #0b1628; }
   .legend { bottom: auto; top: 200px; }
 }
 @media (max-width: 760px) {
-  .legend { top: 134px; left: 8px; width: auto; padding: 5px 8px; flex-direction: row; flex-wrap: wrap; gap: 4px 10px; opacity: 0.92; }
+  .legend { top: calc(var(--below-players, 130px) + 6px); left: 8px; width: auto; padding: 5px 8px; flex-direction: row; flex-wrap: wrap; gap: 4px 10px; opacity: 0.92; }
   .legend .title, .lrow small { display: none; }
   .lrow { font-size: 11px; }
+}
+
+/* ---------- phones held sideways: very little height, so chrome goes to the sides ---------- */
+@media (max-width: 1100px) and (max-height: 500px) {
+  .phasebar { top: max(6px, env(safe-area-inset-top)); left: 150px; right: 56px; width: auto; min-width: 0; transform: none; padding: 4px 10px 6px; }
+  .who, .steps { display: inline-flex; vertical-align: middle; margin: 0 6px; }
+  .who { font-size: 14px; }
+  .steps { font-size: 11px; }
+  .instr { font-size: 13px; }
+  .players { top: max(6px, env(safe-area-inset-top)); left: max(8px, env(safe-area-inset-left)); max-width: 136px; min-width: 0; padding: 3px; flex-direction: column; }
+  .prow { padding: 3px 6px; }
+  .pname small, .pstat[title=Armies], .pstat[title=Cards], .conts, .continents { display: none; }
+  .tools { top: max(6px, env(safe-area-inset-top)); bottom: auto; right: max(8px, env(safe-area-inset-right)); flex-direction: column; gap: 4px; }
+  .tool { width: 34px; height: 34px; font-size: 14px; }
+  .actions { bottom: max(6px, env(safe-area-inset-bottom)); left: 150px; right: 56px; min-width: 0; max-width: none; transform: none; padding-bottom: 0; }
+  .advisor { top: auto; bottom: 62px; left: 8px; right: auto; width: min(300px, 45vw); max-height: 45vh; }
+  .dicebox, .toasts { top: auto; bottom: 62px; right: 56px; left: auto; }
+  .toasts { width: min(320px, 50vw); align-items: stretch; }
+  .legend { top: auto; bottom: 62px; left: 8px; width: auto; }
+  .card-panel { padding: 14px 16px; }
+  .logo { font-size: 30px; }
+  .logo span { margin: 4px 0 10px; }
 }

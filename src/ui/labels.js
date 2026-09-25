@@ -34,7 +34,7 @@ export class Labels {
       el.className = 'cont';
       el.textContent = c.name;
       el.style.setProperty('--t', `#${c.tint.toString(16).padStart(6, '0')}`);
-      this.layer.appendChild(el);
+      this.layer.prepend(el); // under the badges and names
       return { el, pos: toWorld(...c.label) };
     });
     this.probe = [toWorld(50, 30), toWorld(51, 30)];
