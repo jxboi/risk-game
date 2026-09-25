@@ -1,27 +1,30 @@
-// Classic Risk world: 42 territories, 6 continents.
+// The classic 42-territory world with modern, real-world place names.
+// Ids keep the classic Risk names so old saves still load.
 // `seeds` are points on a 100 x 60 board (x right, y down) that grow the
 // territory's land shape; the first seed is where the army token sits.
+// `short` is an optional compact name for the map itself.
+// A continent's `label` is where its name is lettered on the sea, atlas style.
 
 export const CONTINENTS = [
-  { id: 'na', name: 'North America', bonus: 5, tint: 0xc9a86a },
-  { id: 'sa', name: 'South America', bonus: 2, tint: 0x9fbf6a },
-  { id: 'eu', name: 'Europe', bonus: 5, tint: 0x7fa3c9 },
-  { id: 'af', name: 'Africa', bonus: 3, tint: 0xd09a5a },
-  { id: 'as', name: 'Asia', bonus: 7, tint: 0x8fbf8f },
-  { id: 'au', name: 'Australia', bonus: 2, tint: 0xc98fb0 },
+  { id: 'na', name: 'North America', bonus: 5, tint: 0xc9a86a, label: [2, 27] },
+  { id: 'sa', name: 'South America', bonus: 2, tint: 0x9fbf6a, label: [6, 44] },
+  { id: 'eu', name: 'Europe', bonus: 5, tint: 0x7fa3c9, label: [49, 2] },
+  { id: 'af', name: 'Africa', bonus: 3, tint: 0xd09a5a, label: [37, 46] },
+  { id: 'as', name: 'Asia', bonus: 7, tint: 0x8fbf8f, label: [74, 2] },
+  { id: 'au', name: 'Oceania', bonus: 2, tint: 0xc98fb0, label: [69, 52] },
 ];
 
 export const TERRITORIES = [
   // North America
   { id: 'alaska', name: 'Alaska', c: 'na', seeds: [[6, 9], [3, 11]] },
-  { id: 'nwt', name: 'Northwest Territory', c: 'na', seeds: [[14, 8], [19, 7], [11, 9]] },
+  { id: 'nwt', name: 'Northern Canada', short: 'N. Canada', c: 'na', seeds: [[14, 8], [19, 7], [11, 9]] },
   { id: 'greenland', name: 'Greenland', c: 'na', seeds: [[33, 5], [30, 3], [36, 7]] },
-  { id: 'alberta', name: 'Alberta', c: 'na', seeds: [[12, 14], [9, 15]] },
-  { id: 'ontario', name: 'Ontario', c: 'na', seeds: [[19, 14], [18, 12]] },
-  { id: 'quebec', name: 'Quebec', c: 'na', seeds: [[26, 14], [26, 11]] },
-  { id: 'wus', name: 'Western United States', c: 'na', seeds: [[12, 21], [10, 19]] },
-  { id: 'eus', name: 'Eastern United States', c: 'na', seeds: [[20, 21], [23, 19], [22, 24]] },
-  { id: 'cam', name: 'Central America', c: 'na', seeds: [[15, 27], [18, 29]] },
+  { id: 'alberta', name: 'Western Canada', short: 'W. Canada', c: 'na', seeds: [[12, 14], [9, 15]] },
+  { id: 'ontario', name: 'Central Canada', short: 'C. Canada', c: 'na', seeds: [[19, 14], [18, 12]] },
+  { id: 'quebec', name: 'Eastern Canada', short: 'E. Canada', c: 'na', seeds: [[26, 14], [26, 11]] },
+  { id: 'wus', name: 'Western US', c: 'na', seeds: [[12, 21], [10, 19]] },
+  { id: 'eus', name: 'Eastern US', c: 'na', seeds: [[20, 21], [23, 19], [22, 24]] },
+  { id: 'cam', name: 'Central America', short: 'C. America', c: 'na', seeds: [[15, 27], [18, 29]] },
   // South America
   { id: 'venezuela', name: 'Venezuela', c: 'sa', seeds: [[22, 33], [19, 33]] },
   { id: 'peru', name: 'Peru', c: 'sa', seeds: [[21, 39], [19, 37]] },
@@ -29,12 +32,12 @@ export const TERRITORIES = [
   { id: 'argentina', name: 'Argentina', c: 'sa', seeds: [[23, 46], [22, 50], [25, 44]] },
   // Europe
   { id: 'iceland', name: 'Iceland', c: 'eu', seeds: [[41, 9]] },
-  { id: 'gb', name: 'Great Britain', c: 'eu', seeds: [[41, 16], [40, 14]] },
+  { id: 'gb', name: 'British Isles', c: 'eu', seeds: [[41, 16], [40, 14]] },
   { id: 'scandinavia', name: 'Scandinavia', c: 'eu', seeds: [[50, 9], [48, 11], [52, 7]] },
-  { id: 'neurope', name: 'Northern Europe', c: 'eu', seeds: [[50, 17], [48, 16]] },
-  { id: 'weurope', name: 'Western Europe', c: 'eu', seeds: [[42, 22], [43, 25]] },
-  { id: 'seurope', name: 'Southern Europe', c: 'eu', seeds: [[51, 22], [49, 23]] },
-  { id: 'ukraine', name: 'Ukraine', c: 'eu', seeds: [[59, 14], [58, 18], [58, 10]] },
+  { id: 'neurope', name: 'Central Europe', short: 'C. Europe', c: 'eu', seeds: [[50, 17], [48, 16]] },
+  { id: 'weurope', name: 'France & Iberia', short: 'France & Iberia', c: 'eu', seeds: [[42, 22], [43, 25]] },
+  { id: 'seurope', name: 'Italy & Balkans', short: 'Italy & Balkans', c: 'eu', seeds: [[51, 22], [49, 23]] },
+  { id: 'ukraine', name: 'Eastern Europe', short: 'E. Europe', c: 'eu', seeds: [[59, 14], [58, 18], [58, 10]] },
   // Africa
   { id: 'nafrica', name: 'North Africa', c: 'af', seeds: [[43, 32], [41, 35], [46, 30]] },
   { id: 'egypt', name: 'Egypt', c: 'af', seeds: [[52, 29]] },
@@ -43,23 +46,23 @@ export const TERRITORIES = [
   { id: 'safrica', name: 'South Africa', c: 'af', seeds: [[51, 46], [50, 49]] },
   { id: 'madagascar', name: 'Madagascar', c: 'af', seeds: [[59, 46], [59, 48]] },
   // Asia
-  { id: 'ural', name: 'Ural', c: 'as', seeds: [[66, 13], [65, 16]] },
+  { id: 'ural', name: 'Kazakhstan', c: 'as', seeds: [[66, 13], [65, 16]] },
   { id: 'siberia', name: 'Siberia', c: 'as', seeds: [[72, 9], [71, 12]] },
-  { id: 'yakutsk', name: 'Yakutsk', c: 'as', seeds: [[80, 7], [78, 6]] },
+  { id: 'yakutsk', name: 'Russian Arctic', c: 'as', seeds: [[80, 7], [78, 6]] },
   { id: 'kamchatka', name: 'Kamchatka', c: 'as', seeds: [[89, 8], [92, 9], [87, 11]] },
-  { id: 'irkutsk', name: 'Irkutsk', c: 'as', seeds: [[79, 13]] },
+  { id: 'irkutsk', name: 'Lake Baikal', c: 'as', seeds: [[79, 13]] },
   { id: 'mongolia', name: 'Mongolia', c: 'as', seeds: [[80, 19], [83, 18]] },
   { id: 'japan', name: 'Japan', c: 'as', seeds: [[92, 20], [91, 17]] },
   { id: 'afghanistan', name: 'Afghanistan', c: 'as', seeds: [[64, 22], [66, 20]] },
   { id: 'china', name: 'China', c: 'as', seeds: [[76, 25], [72, 20], [79, 24]] },
   { id: 'mideast', name: 'Middle East', c: 'as', seeds: [[59, 28], [62, 31], [57, 25]] },
   { id: 'india', name: 'India', c: 'as', seeds: [[69, 31], [70, 34]] },
-  { id: 'siam', name: 'Siam', c: 'as', seeds: [[78, 33], [77, 31]] },
-  // Australia
+  { id: 'siam', name: 'Southeast Asia', short: 'SE Asia', c: 'as', seeds: [[78, 33], [77, 31]] },
+  // Oceania
   { id: 'indonesia', name: 'Indonesia', c: 'au', seeds: [[79, 41], [76, 40]] },
   { id: 'newguinea', name: 'New Guinea', c: 'au', seeds: [[89, 40], [87, 39]] },
-  { id: 'waus', name: 'Western Australia', c: 'au', seeds: [[82, 50], [80, 49]] },
-  { id: 'eaus', name: 'Eastern Australia', c: 'au', seeds: [[89, 49], [90, 52], [89, 46]] },
+  { id: 'waus', name: 'Western Australia', short: 'W. Australia', c: 'au', seeds: [[82, 50], [80, 49]] },
+  { id: 'eaus', name: 'Eastern Australia', short: 'E. Australia', c: 'au', seeds: [[89, 49], [90, 52], [89, 46]] },
 ];
 
 const ADJ = {

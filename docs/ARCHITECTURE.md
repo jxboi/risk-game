@@ -16,7 +16,7 @@ src/
     stage.js          renderer, camera/controls, bloom, frame loop helpers
   ui/
     hud.js            DOM chrome; renders what the controller gives it
-    labels.js         army counts + popups pinned to 3D positions
+    labels.js         army counts, place names, continent names + popups pinned to 3D positions
   controller.js       glue: input -> game, game events -> animation queue, AI loop
   audio.js            WebAudio synth: all SFX + ambient music
   main.js             menu, match setup, frame loop
@@ -52,7 +52,7 @@ Headless browser checks work with Playwright + SwiftShader (`--use-angle=swiftsh
 2. ~~**Save/resume**~~: done. `Game.toJSON()` / `Game.fromJSON()` (plain data plus the RNG state); the controller calls `onSave` at every `turn` event and main.js keeps it in localStorage (`conquest.save`) behind the menu's Continue button.
 3. **Richer 3D armies**: replace disc stacks with instanced soldier, cavalry and cannon models (GLTF made in Blender, or procedural). Add troop-march animation along paths when fortifying.
 4. ~~**Threat overlay**~~: done. `T` or the ◎ tool; `advisor.pressure()` rates borders and openings, `Board.setTint` fades the colours in.
-5. **Tutorial campaign**: scripted scenarios such as "Hold Australia" or "Break the bonus", using the advisor text.
+5. **Tutorial campaign**: scripted scenarios such as "Hold Oceania" or "Break the bonus", using the advisor text.
 6. **Game options**: secret missions, capitals mode, fixed vs escalating card values, neutral armies in 2-player games, fog of war.
 7. **Stats screen**: the territory-over-time chart is done (`territoryChart` in hud.js). Still to do: battle log, and a replay using the seeded RNG.
 8. **AI personalities**: aggressive, turtle and opportunist variants on top of the levels. Monte-Carlo lookahead for Warlord.
