@@ -101,7 +101,12 @@ export class Stage {
     this.ndc = new THREE.Vector2();
     this.focus = null;
 
+    // iOS Safari resizes the page as its toolbars slide in and out without
+    // always firing 'resize', so update() also checks the size every frame.
+    this.w = container.clientWidth;
+    this.h = container.clientHeight;
     window.addEventListener('resize', () => this.resize());
+    window.visualViewport?.addEventListener('resize', () => this.resize());
   }
 
   // Frame the whole map for the current aspect ratio.
@@ -124,6 +129,9 @@ export class Stage {
 
   resize() {
     const w = this.container.clientWidth, h = this.container.clientHeight;
+    if (!w || !h) return;
+    this.w = w;
+    this.h = h;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
@@ -139,11 +147,12 @@ export class Stage {
     return this.raycaster;
   }
 
-  // World position -> CSS pixels (for DOM labels).
+  // World position -> CSS pixels (for DOM labels). Uses the size the canvas
+  // was last rendered at, so labels stay pinned even mid-resize.
   project(v, out) {
     const p = v.clone().project(this.camera);
-    out.x = (p.x * 0.5 + 0.5) * this.container.clientWidth;
-    out.y = (-p.y * 0.5 + 0.5) * this.container.clientHeight;
+    out.x = (p.x * 0.5 + 0.5) * this.w;
+    out.y = (-p.y * 0.5 + 0.5) * this.h;
     out.visible = p.z < 1;
     return out;
   }
@@ -181,6 +190,7 @@ export class Stage {
 
   update(dt, fx) {
     this.time += dt;
+    if (this.container.clientWidth !== this.w || this.container.clientHeight !== this.h) this.resize();
     if (this.fly) {
       const f = this.fly;
       f.t = Math.min(1, f.t + dt / f.dur);
