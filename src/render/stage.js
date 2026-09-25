@@ -6,6 +6,25 @@ import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
+
+// Last pass: a lens vignette that tightens on big moments, plus fine film
+// grain so flat colours feel photographed rather than drawn.
+const LensShader = {
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uVignette: { value: 0.32 }, uGrain: { value: 0.035 }, uAspect: { value: 1 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime; uniform float uVignette; uniform float uGrain; uniform float uAspect;
+    varying vec2 vUv;
+    float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+    void main(){
+      vec4 c = texture2D(tDiffuse, vUv);
+      vec2 d = (vUv - 0.5) * vec2(uAspect, 1.0);
+      float v = smoothstep(0.35, 1.05, length(d) * 1.25);
+      c.rgb *= 1.0 - v * uVignette;
+      c.rgb += (h(vUv * 911.0 + fract(uTime) * 37.0) - 0.5) * uGrain;
+      gl_FragColor = c;
+    }`,
+};
 
 export class Stage {
   constructor(container) {
@@ -73,6 +92,10 @@ export class Stage {
     this.baseBloom = 0.55;
     this.composer.addPass(this.bloom);
     this.composer.addPass(new OutputPass());
+    this.lens = new ShaderPass(LensShader);
+    this.lens.uniforms.uAspect.value = container.clientWidth / container.clientHeight;
+    this.composer.addPass(this.lens);
+    this.time = 0;
 
     this.raycaster = new THREE.Raycaster();
     this.ndc = new THREE.Vector2();
@@ -106,6 +129,7 @@ export class Stage {
     this.renderer.setSize(w, h);
     this.composer.setSize(w, h);
     this.bloom.setSize(w, h);
+    this.lens.uniforms.uAspect.value = w / h;
   }
 
   rayFromClient(x, y) {
@@ -133,6 +157,21 @@ export class Stage {
     this.focus = { from: t.clone(), to: new THREE.Vector3(point.x * 0.7, 0, point.z * 0.7 + 1), t: 0 };
   }
 
+  // Opening shot: sweep down from high orbit onto the board. Any touch or
+  // drag hands the camera straight back to the player.
+  intro(reduced = false) {
+    this.fitView();
+    if (reduced) return;
+    const endPos = this.camera.position.clone(), endTarget = this.controls.target.clone();
+    const off = endPos.clone().sub(endTarget);
+    const startPos = endTarget.clone().add(off.clone().multiplyScalar(1.6).applyAxisAngle(new THREE.Vector3(0, 1, 0), -0.55));
+    startPos.y += 30;
+    this.fly = { t: 0, dur: 2.6, startPos, endPos, target: endTarget };
+    this.camera.position.copy(startPos);
+    const stop = () => { this.fly = null; this.controls.removeEventListener('start', stop); };
+    this.controls.addEventListener('start', stop);
+  }
+
   // Ease back to the framing the player left (used when their turn starts).
   glideHome() {
     const home = new THREE.Vector3(0, 0, 2);
@@ -141,6 +180,17 @@ export class Stage {
   }
 
   update(dt, fx) {
+    this.time += dt;
+    if (this.fly) {
+      const f = this.fly;
+      f.t = Math.min(1, f.t + dt / f.dur);
+      const e = 1 - Math.pow(1 - f.t, 3);
+      // Curve in: height settles faster than the swing, like a crane shot.
+      this.camera.position.lerpVectors(f.startPos, f.endPos, e);
+      this.camera.position.y = THREE.MathUtils.lerp(f.startPos.y, f.endPos.y, 1 - Math.pow(1 - f.t, 4));
+      this.controls.target.copy(f.target);
+      if (f.t >= 1) this.fly = null;
+    }
     if (this.focus) {
       const f = this.focus;
       f.t = Math.min(1, f.t + dt / 0.5);
@@ -156,6 +206,8 @@ export class Stage {
     const fov = this.baseFov * (1 - fx.punch);
     if (Math.abs(this.camera.fov - fov) > 0.001) { this.camera.fov = fov; this.camera.updateProjectionMatrix(); }
     this.bloom.strength = this.baseBloom + fx.punch * 18;
+    this.lens.uniforms.uTime.value = this.time;
+    this.lens.uniforms.uVignette.value = 0.32 + fx.punch * 6;
     this.composer.render();
   }
 }

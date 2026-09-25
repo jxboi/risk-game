@@ -16,6 +16,12 @@ import { territoryChart } from './ui/hud.js';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const hex = (c) => `#${c.toString(16).padStart(6, '0')}`;
 const tname = (t) => TERRITORIES[t].name;
+// Battle-log verbs, escalating with the conquest streak.
+const VERBS = [['takes', 'seizes', 'captures'], ['storms', 'overruns', 'sweeps into'], ['smashes through', 'crushes', 'tears into']];
+const verb = (streak, moved) => {
+  const tier = VERBS[Math.min(2, Math.floor((streak - 1) / 2))];
+  return tier[(streak + moved) % tier.length];
+};
 const THREAT_COLORS = { danger: 0xff2a1f, tense: 0xffa21f, safe: 0x2fe08a, opening: 0x6fd8ff };
 const THREAT_LEGEND = [
   ['danger', 'Outgunned', 'The enemy next door is stronger. Reinforce or fall back.'],
@@ -44,6 +50,8 @@ export class Controller {
     this.aiRunning = false;
     this.destroyed = false;
     this.threatOn = false;
+    this.pt = { x: 0, y: 0, visible: true };
+    fx.clearSmolders();
     if (resumed && game.player.human) this.turnStart = snapshot(game, game.current);
 
     for (let t = 0; t < TERRITORIES.length; t++) board.setTerritory(t, game.owner[t], game.armies[t]);
@@ -114,6 +122,17 @@ export class Controller {
     for (const t of list) this.board.setTerritory(t, ev.owner[t], ev.armies[t]);
   }
 
+  // Stereo position of a world point: -1 at the left edge of the screen, 1 at the right.
+  panOf(pos) {
+    this.stage.project(pos, this.pt);
+    return (this.pt.x / Math.max(1, this.stage.container.clientWidth)) * 2 - 1;
+  }
+
+  // Short narrated line in the battle log.
+  dispatch(html, player) {
+    this.hud.dispatch(html, this.colors[player]);
+  }
+
   // ---- the juice -----------------------------------------------------------
   async animate(ev) {
     const { type, data } = ev;
@@ -132,7 +151,7 @@ export class Controller {
         labels.bump(data.t);
         fx.burst(board.tokenTop(data.t), this.game.players[data.player].color, { count: big ? 12 : 5, speed: 4, up: 5, size: 0.16, sparks: big ? 10 : 4 });
         if (big) fx.ring(board.tokenPos(data.t), this.colors[data.player], { size: 3.5, dur: 0.4 });
-        audio.place(this.placeStep++, big);
+        audio.panned(this.panOf(board.tokenPos(data.t)), () => audio.place(this.placeStep++, big));
         if (!ev.human) await sleep((data.setup ? 60 : 200) * sp);
         break;
       }
@@ -147,10 +166,11 @@ export class Controller {
         const from = board.tokenTop(data.from), to = board.tokenTop(data.to);
         if (!ev.human) this.stage.glideTo(to);
         hud.showDice(data, this.colors);
-        audio.diceRattle();
+        const pan = this.panOf(to);
+        audio.panned(pan, () => { audio.diceRattle(); audio.cannon(0.6); });
+        audio.tension(0.06 + 0.03 * (data.aLoss + data.dLoss));
         const shots = Math.min(3, data.att.length);
         const flight = 260 * rush * sp;
-        audio.cannon(0.6);
         const landing = [];
         for (let i = 0; i < shots; i++) {
           landing.push(fx.shoot(from, to.clone().add(toWorld(50 + (Math.random() - 0.5) * 1.2, 30 + (Math.random() - 0.5) * 1.2)), this.colors[data.attacker], flight / 1000));
@@ -165,13 +185,16 @@ export class Controller {
           board.punchToken(data.to, 0.3 + data.dLoss * 0.12);
           labels.popup(to, `-${data.dLoss}`, 'loss');
           if (data.dLoss >= 2) fx.addShake(0.25);
+          board.scorch(data.to, 0.07 * data.dLoss);
         }
+        // The fight leaves smoke hanging over the field.
+        fx.smolder(`t${data.to}`, board.tokenPos(data.to), 0.1 * (data.aLoss + data.dLoss));
         if (data.aLoss) {
           fx.burst(from, g.players[data.attacker].color, { count: 4 + data.aLoss * 3, speed: 5, up: 5, sparks: 3 });
           board.punchToken(data.from, 0.25);
           labels.popup(from, `-${data.aLoss}`, 'loss');
         }
-        audio.rollResult(data.aLoss, data.dLoss, ev.human);
+        audio.panned(pan, () => audio.rollResult(data.aLoss, data.dLoss, ev.human));
         await sleep(Math.max(70, 240 * rush * sp));
         break;
       }
@@ -189,7 +212,11 @@ export class Controller {
         board.punchToken(data.to, 0.6);
         labels.bump(data.to);
         labels.popup(board.tokenTop(data.to), this.streak >= 2 ? `CAPTURED ×${this.streak}` : 'CAPTURED', 'capture');
-        audio.conquer(this.streak - 1);
+        audio.panned(this.panOf(pos), () => audio.conquer(this.streak - 1));
+        audio.tension(0.18);
+        board.scorch(data.to, 0.45);
+        fx.smolder(`t${data.to}`, pos, 0.6);
+        this.dispatch(`<b>${g.players[data.player].name}</b> ${verb(this.streak, data.moved)} <b>${tname(data.to)}</b>${data.defender >= 0 ? ` from ${g.players[data.defender].name}` : ''}`, data.player);
         await sleep(420 * rush * sp);
         break;
       }
@@ -206,6 +233,8 @@ export class Controller {
           fx.fountain(board.tokenTop(t), [g.players[data.player].color, 0xffffff, 0xffd27a], 14);
         }, i * 70));
         mine || !this.anyHuman() ? audio.continent() : audio.lostContinent();
+        audio.tension(0.3);
+        this.dispatch(`<b>${g.players[data.player].name}</b> controls all of <b>${c.name}</b> (+${c.bonus})`, data.player);
         await sleep(900 * sp);
         break;
       }
@@ -214,14 +243,18 @@ export class Controller {
         fx.addShake(0.9);
         fx.addPunch(0.06);
         audio.eliminate();
+        audio.tension(0.5);
+        this.dispatch(`<b>${g.players[data.player].name}</b> has fallen to ${g.players[data.by].name}`, data.player);
         await sleep(1000 * sp);
         break;
       }
       case 'move': {
         const a = board.tokenTop(data.from), b = board.tokenTop(data.to);
-        audio.march();
-        fx.shoot(a, b, this.colors[data.player], 0.3);
-        await sleep(data.fortify ? 300 : 120);
+        audio.panned(this.panOf(b), () => audio.march());
+        // A column of troops: more figures for bigger moves.
+        const troops = Math.min(6, 2 + Math.ceil(Math.log2(data.n + 1)));
+        fx.march(a, b, this.colors[data.player], troops, data.fortify ? 0.5 : 0.36);
+        await sleep(data.fortify ? 420 : 200);
         this.syncTerritories(ev, [data.from, data.to]);
         board.punchToken(data.to, 0.35);
         labels.bump(data.to);
