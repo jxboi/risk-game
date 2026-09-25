@@ -29,7 +29,12 @@ export class Hud {
     this.tooltip = h('div', 'forecast hidden');
     this.tools = h('div', 'tools');
     this.legend = h('div', 'panel legend hidden');
-    for (const el of [this.players, this.phase, this.continents, this.legend, this.side, this.dice, this.actions, this.banner, this.toasts, this.tooltip, this.tools]) {
+    // Battle log: the war narrated a line at a time; read out by screen readers too.
+    this.log = h('div', 'dispatches');
+    this.log.setAttribute('role', 'log');
+    this.log.setAttribute('aria-live', 'polite');
+    this.log.setAttribute('aria-label', 'Battle log');
+    for (const el of [this.players, this.phase, this.continents, this.legend, this.log, this.side, this.dice, this.actions, this.banner, this.toasts, this.tooltip, this.tools]) {
       this.root.appendChild(el);
     }
     this.bannerTimer = 0;
@@ -39,9 +44,13 @@ export class Hud {
       const bottom = (el) => el.offsetTop + el.offsetHeight;
       this.root.style.setProperty('--below-phase', `${bottom(this.phase)}px`);
       this.root.style.setProperty('--below-players', `${bottom(this.players)}px`);
+      // The log sits on whichever bottom-left panel is showing.
+      this.root.style.setProperty('--above-left', `${20 + Math.max(this.continents.offsetHeight, this.legend.offsetHeight)}px`);
     });
     this.stack.observe(this.phase);
     this.stack.observe(this.players);
+    this.stack.observe(this.continents);
+    this.stack.observe(this.legend);
   }
 
   // ---- top-left: players -------------------------------------------------
@@ -170,6 +179,14 @@ export class Hud {
     this.banner.innerHTML = `<div class="btitle">${title}</div>${sub ? `<div class="bsub">${sub}</div>` : ''}`;
     clearTimeout(this.bannerTimer);
     this.bannerTimer = setTimeout(() => { this.banner.className = 'banner'; }, ms);
+  }
+
+  dispatch(html, color) {
+    const line = h('div', 'dline', html);
+    line.style.setProperty('--c', color);
+    this.log.appendChild(line);
+    while (this.log.children.length > 3) this.log.firstChild.remove();
+    setTimeout(() => line.classList.add('old'), 7000);
   }
 
   toast(html, ms = 3500, cls = '') {

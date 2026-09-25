@@ -16,6 +16,20 @@ const WHITE = new THREE.Color(1, 1, 1);
 
 export const toWorld = (x, y) => new THREE.Vector3(x - 50, 0, y - 30);
 
+const ASH = new THREE.Color(0x1a1512);
+
+// Drifting cloud shadows, shared by the land and the sea so they agree.
+// The wind blows toward +x, the same way battlefield smoke leans.
+const CLOUD_GLSL = `
+  float cloudH(vec2 p){ return fract(sin(dot(p, vec2(41.3, 289.1))) * 17853.3); }
+  float cloudN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
+    return mix(mix(cloudH(i), cloudH(i+vec2(1,0)), f.x), mix(cloudH(i+vec2(0,1)), cloudH(i+vec2(1,1)), f.x), f.y); }
+  float cloudShade(vec2 xz, float t){
+    vec2 p = xz * 0.022 + vec2(t * 0.008, t * 0.003);
+    float c = cloudN(p) * 0.7 + cloudN(p * 2.3 + 7.1) * 0.24 + cloudN(p * 5.1 - 3.3) * 0.06;
+    return 1.0 - smoothstep(0.5, 0.8, c) * 0.36;
+  }`;
+
 export class Board {
   constructor(scene, playerColors) {
     this.scene = scene;
@@ -26,6 +40,7 @@ export class Board {
     this.neutral = new THREE.Color(0x6b7280);
     this.time = 0;
     this.contColors = CONTINENTS.map((c) => new THREE.Color(c.tint));
+    this.clouds = { value: 0 }; // shared time uniform for cloud shadows
 
     // Per-territory animated view state.
     this.tv = TERRITORIES.map((_, ti) => ({
@@ -39,6 +54,7 @@ export class Board {
       flip: null, // conquest ripple {t, dur, from: Color, origin: Vector3}
       bump: 0, // quick vertical kick on hits
       tintK: 0, tintTarget: 0, tintColor: new THREE.Color(), // threat overlay
+      scorch: 0, // battle damage: darkens the ground, fades over ~40 s
     }));
 
     this.buildOcean();
@@ -58,6 +74,8 @@ export class Board {
         uDeep: { value: new THREE.Color(0x06162b) },
         uShallow: { value: new THREE.Color(0x0f3d63) },
         uGlint: { value: new THREE.Color(0x5fb6ff) },
+        uLand: { value: this.buildLandMask() },
+        uClouds: this.clouds,
         fogColor: { value: new THREE.Color() }, fogNear: { value: 0 }, fogFar: { value: 0 },
       },
       vertexShader: `
@@ -65,7 +83,9 @@ export class Board {
         void main(){ vec4 w = modelMatrix * vec4(position,1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w; }`,
       fragmentShader: `
         uniform float uTime; uniform vec3 uDeep; uniform vec3 uShallow; uniform vec3 uGlint;
+        uniform sampler2D uLand; uniform float uClouds;
         varying vec3 vW;
+        ${CLOUD_GLSL}
         float h(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7)))*43758.5453); }
         float n(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
           return mix(mix(h(i),h(i+vec2(1,0)),f.x), mix(h(i+vec2(0,1)),h(i+vec2(1,1)),f.x), f.y); }
@@ -81,12 +101,60 @@ export class Board {
           vec2 g = abs(fract(vW.xz / 10.0) - 0.5);
           float grid = smoothstep(0.485, 0.5, max(g.x, g.y));
           col += vec3(0.25,0.55,0.9) * grid * 0.05 * (1.0 - clamp(r,0.0,1.0));
+          // Surf: bands of foam roll in toward every coast.
+          vec2 luv = vec2((vW.x + 50.0) / 100.0, (vW.z + 30.0) / 60.0);
+          // Off the map there is no land; don't let the edge texels smear outward.
+          float inside = step(0.0, luv.x) * step(luv.x, 1.0) * step(0.0, luv.y) * step(luv.y, 1.0);
+          float m = texture2D(uLand, luv).r * inside;
+          float near = smoothstep(0.03, 0.3, m) * (1.0 - smoothstep(0.42, 0.5, m));
+          float bands = smoothstep(0.7, 1.0, sin(m * 30.0 - uTime * 1.1 + n(p * 4.0) * 3.0));
+          col += vec3(0.6, 0.8, 1.0) * near * bands * 0.07;
+          col *= mix(1.0, cloudShade(vW.xz, uClouds), 0.6);
           gl_FragColor = vec4(col, 1.0);
         }`,
     });
     const ocean = new THREE.Mesh(geo, this.oceanMat);
     ocean.receiveShadow = false;
     this.root.add(ocean);
+  }
+
+  // Blurred land/sea mask of the board (2 px per map unit). The ocean uses it
+  // to find its coasts.
+  buildLandMask() {
+    const S = 2, W = 100 * S, H = 60 * S;
+    let a = new Float32Array(W * H);
+    for (const c of this.map.land) {
+      const cx = c.x * S, cy = c.y * S, r = HEX * S * 1.05;
+      for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) {
+        for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
+          if (x >= 0 && y >= 0 && x < W && y < H && Math.hypot(x - cx, y - cy) <= r) a[y * W + x] = 1;
+        }
+      }
+    }
+    // Three box-blur passes each way approximate a soft gaussian falloff.
+    const R = 3;
+    for (let pass = 0; pass < 3; pass++) {
+      for (const horiz of [true, false]) {
+        const b = new Float32Array(W * H);
+        for (let y = 0; y < H; y++) {
+          for (let x = 0; x < W; x++) {
+            let sum = 0, n = 0;
+            for (let k = -R; k <= R; k++) {
+              const xx = horiz ? x + k : x, yy = horiz ? y : y + k;
+              if (xx >= 0 && yy >= 0 && xx < W && yy < H) { sum += a[yy * W + xx]; n++; }
+            }
+            b[y * W + x] = sum / n;
+          }
+        }
+        a = b;
+      }
+    }
+    const data = new Uint8Array(W * H);
+    for (let i = 0; i < data.length; i++) data[i] = Math.round(Math.min(1, a[i]) * 255);
+    const tex = new THREE.DataTexture(data, W, H, THREE.RedFormat, THREE.UnsignedByteType);
+    tex.magFilter = tex.minFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    return tex;
   }
 
   // A pale underwater shelf around every coast.
@@ -118,6 +186,24 @@ export class Board {
     }
     geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
     const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.08 });
+    // Cloud shadows dim the sunlight only; sky light still fills them.
+    mat.onBeforeCompile = (shader) => {
+      shader.uniforms.uClouds = this.clouds;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec2 vCloud;')
+        .replace('#include <project_vertex>', `#include <project_vertex>
+          vec4 cloudW = vec4(transformed, 1.0);
+          #ifdef USE_INSTANCING
+            cloudW = instanceMatrix * cloudW;
+          #endif
+          vCloud = (modelMatrix * cloudW).xz;`);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', `#include <common>\nvarying vec2 vCloud;\nuniform float uClouds;\n${CLOUD_GLSL}`)
+        .replace('#include <lights_fragment_end>', `#include <lights_fragment_end>
+          float cs = cloudShade(vCloud, uClouds);
+          reflectedLight.directDiffuse *= cs;
+          reflectedLight.directSpecular *= cs;`);
+    };
     this.tiles = new THREE.InstancedMesh(geo, mat, land.length);
     this.tiles.castShadow = true;
     this.tiles.receiveShadow = true;
@@ -235,6 +321,8 @@ export class Board {
 
   punchToken(ti, amount = 0.35) { this.tokens[ti].punch = Math.max(this.tokens[ti].punch, amount); }
   bumpTerritory(ti, amount = 0.35) { this.tv[ti].bump = Math.max(this.tv[ti].bump, amount); }
+  // Battle damage: the ground chars, then recovers over the next ~40 s.
+  scorch(ti, amount = 0.3) { this.tv[ti].scorch = Math.min(1, this.tv[ti].scorch + amount); }
 
   // Highlight modes are set by the controller each time the selection changes.
   clearHighlights() {
@@ -267,6 +355,7 @@ export class Board {
     this.time += dt;
     this.oceanMat.uniforms.uTime.value = this.time;
     this.laneMat.uniforms.uTime.value = this.time;
+    this.clouds.value = this.time;
     const k = 1 - Math.pow(0.0001, dt); // fast approach
     const pulseWave = 0.5 + 0.5 * Math.sin(this.time * 6);
 
@@ -277,6 +366,7 @@ export class Board {
       v.dim += (v.dimTarget - v.dim) * k;
       v.tintK += (v.tintTarget - v.tintK) * k;
       v.bump *= Math.pow(0.0005, dt);
+      if (v.scorch > 0) v.scorch = Math.max(0, v.scorch - dt / 40);
       const tok = this.tokens[ti];
 
       const base = this.colorOf(v.owner);
@@ -299,6 +389,8 @@ export class Board {
           if (lt > 0 && lt < 1) y += Math.sin(lt * Math.PI) * 0.9;
         }
         tmpC.lerp(cont, 0.12).multiplyScalar(b.jitter);
+        // Char unevenly, so it reads as burnt ground, not a colour change.
+        if (v.scorch > 0.002) tmpC.lerp(ASH, v.scorch * (0.12 + 0.2 * b.jitter * Math.abs(Math.sin(b.pos.x * 2.1 + b.pos.z * 1.7))));
         if (v.tintK > 0.002) tmpC.lerp(v.tintColor, v.tintK);
         if (glow > 0.001) tmpC.lerp(v.glowColor, glow * 0.45).multiplyScalar(1 + glow * 0.5);
         if (v.dim > 0.001) tmpC.multiplyScalar(1 - v.dim * 0.55);

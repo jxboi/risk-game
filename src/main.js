@@ -47,9 +47,18 @@ function loop() {
     board.update(dt);
     labels?.update();
     stage.update(realDt, fx);
+    listen();
     requestAnimationFrame(frame);
   };
   requestAnimationFrame(frame);
+}
+
+// The sea gets louder as the camera comes down toward the coasts.
+let ambLevel = -1;
+function listen() {
+  const d = stage.camera.position.distanceTo(stage.controls.target);
+  const level = Math.round(Math.min(1, Math.max(0, (150 - d) / 110)) * 20) / 20;
+  if (level !== ambLevel) { ambLevel = level; audio.setAmbience(level); }
 }
 
 function loadSlots() {
@@ -170,7 +179,7 @@ function startGame(slots, opts, resumed = null) {
   mountBoard(game.players.map((p) => p.color));
   hud = new Hud(app);
   labels = new Labels(hud.root, stage, board, cssColors);
-  stage.fitView();
+  stage.intro(fx.reduced);
   controller = new Controller({
     game, stage, board, fx, hud, labels, options: opts, resumed: !!resumed,
     // A new game replaces any older save once its first turn starts.
@@ -184,7 +193,7 @@ function startGame(slots, opts, resumed = null) {
     },
   });
   // Handy for debugging and for automated tests.
-  window.__conquest = { game, controller, board, stage };
+  window.__conquest = { game, controller, board, stage, fx };
 }
 
 mountBoard(PALETTE.map((p) => p.color));

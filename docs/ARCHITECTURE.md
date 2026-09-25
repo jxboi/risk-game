@@ -11,14 +11,14 @@ src/
     rng.js            seeded PRNG (games and tests are reproducible)
   render/             three.js
     hexmap.js         procedural hex world (pure data, testable)
-    board.js          ocean shader, instanced hex tiles, tokens, highlights, ripples
-    fx.js             pooled particles, rings, projectiles, flashes, shake, hit-stop
-    stage.js          renderer, camera/controls, bloom, frame loop helpers
+    board.js          ocean shader (surf, cloud shadows), instanced hex tiles, tokens, highlights, ripples, scorch
+    fx.js             pooled particles, rings, projectiles, marching columns, battlefield smoke, flashes, shake, hit-stop
+    stage.js          renderer, camera/controls, intro fly-in, bloom, vignette + grain, frame loop helpers
   ui/
     hud.js            DOM chrome; renders what the controller gives it
     labels.js         army counts, place names, continent names + popups pinned to 3D positions
   controller.js       glue: input -> game, game events -> animation queue, AI loop
-  audio.js            WebAudio synth: all SFX + ambient music
+  audio.js            WebAudio synth: all SFX (panned to screen position), music, sea/wind bed, war drums
   main.js             menu, match setup, frame loop
 scripts/sim.js        headless AI-vs-AI simulator (also used by tests)
 test/                 node --test suites
@@ -41,16 +41,23 @@ Never drive game state from an animation callback. Never make the model wait on 
 - **A new effect**: use the pools in `fx.js`. Don't allocate meshes per event. Keep shake at or below 0.9 world units and hit-stop at or below 110 ms, and respect `fx.reduced` (prefers-reduced-motion).
 - **A new map**: `data/map.js` holds territories with `seeds` on a 100×60 board. `hexmap.js` grows land from the seeds. It floods tiles where non-adjacent territories would touch and draws sea lanes for adjacencies across water, so the map always agrees with the rules.
 
+## Atmosphere
+
+- **Aftermath**: battles call `fx.smolder(key, pos, heat)` and `board.scorch(t, amount)`. Smoke and charred ground fade over ~30–40 s, so the map shows where the war has been.
+- **Adaptive audio**: `audio.tension(x)` raises the war-drum intensity (battles +small, conquests, continents and eliminations more); it decays to silence in ~20 s of quiet. Drums and the sea/wind bed follow the Music toggle. Wrap SFX in `audio.panned(controller.panOf(pos), fn)` so they come from where they happen.
+- **Battle log**: `hud.dispatch(html, color)` narrates conquests, continents and eliminations (an `aria-live` log). Wide screens only, so it never covers the play field on phones.
+- Clouds blow toward +x and smoke leans the same way; keep new weather consistent with that wind.
+
 ## Debugging
 
-`window.__conquest = { game, controller, board, stage }` is exposed in the browser.
+`window.__conquest = { game, controller, board, stage, fx }` is exposed in the browser.
 Headless browser checks work with Playwright + SwiftShader (`--use-angle=swiftshader`). Expect about 4 fps there, so wait on game state, not on time.
 
 ## Roadmap (highest felt value first)
 
 1. **Online multiplayer**: the engine is already deterministic and action-based. Send actions, not state; seed the RNG from the server. Rooms plus a lobby.
 2. ~~**Save/resume**~~: done. `Game.toJSON()` / `Game.fromJSON()` (plain data plus the RNG state); the controller calls `onSave` at every `turn` event and main.js keeps it in localStorage (`conquest.save`) behind the menu's Continue button.
-3. **Richer 3D armies**: replace disc stacks with instanced soldier, cavalry and cannon models (GLTF made in Blender, or procedural). Add troop-march animation along paths when fortifying.
+3. **Richer 3D armies**: replace disc stacks with instanced soldier, cavalry and cannon models (GLTF made in Blender, or procedural). Troop columns now march between territories (`fx.march`); next, route them along the owned path rather than straight across.
 4. ~~**Threat overlay**~~: done. `T` or the ◎ tool; `advisor.pressure()` rates borders and openings, `Board.setTint` fades the colours in.
 5. **Tutorial campaign**: scripted scenarios such as "Hold Oceania" or "Break the bonus", using the advisor text.
 6. **Game options**: secret missions, capitals mode, fixed vs escalating card values, neutral armies in 2-player games, fog of war.

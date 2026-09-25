@@ -1,5 +1,6 @@
 // Pooled effects: debris particles, glowing sparks, shockwave rings,
-// projectiles and impact flashes. Nothing is allocated per event.
+// projectiles, marching columns, impact flashes, and lingering smoke over
+// battlefields. Nothing is allocated per event.
 
 import * as THREE from 'three';
 
@@ -8,6 +9,7 @@ const tmpQ = new THREE.Quaternion();
 const tmpE = new THREE.Euler();
 const tmpS = new THREE.Vector3();
 const tmpV = new THREE.Vector3();
+const tmpP = new THREE.Vector3();
 
 class ParticlePool {
   constructor(parent, geo, mat, size) {
@@ -16,7 +18,7 @@ class ParticlePool {
     this.mesh.frustumCulled = false;
     this.items = Array.from({ length: size }, () => ({
       alive: false, p: new THREE.Vector3(), v: new THREE.Vector3(), r: new THREE.Vector3(),
-      spin: new THREE.Vector3(), life: 0, max: 1, size: 1, grav: 1, drag: 0,
+      spin: new THREE.Vector3(), life: 0, max: 1, size: 1, grav: 1, drag: 0, grow: 0,
     }));
     this.next = 0;
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
@@ -27,14 +29,14 @@ class ParticlePool {
     parent.add(this.mesh);
   }
 
-  spawn(pos, vel, color, { life = 0.6, size = 0.2, grav = 1, drag = 0 } = {}) {
+  spawn(pos, vel, color, { life = 0.6, size = 0.2, grav = 1, drag = 0, grow = 0, spin = 16 } = {}) {
     const i = this.next;
     this.next = (this.next + 1) % this.items.length;
     const it = this.items[i];
     it.alive = true; it.p.copy(pos); it.v.copy(vel);
     it.r.set(Math.random() * 6, Math.random() * 6, Math.random() * 6);
-    it.spin.set((Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16, (Math.random() - 0.5) * 16);
-    it.life = 0; it.max = life; it.size = size; it.grav = grav; it.drag = drag;
+    it.spin.set((Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin, (Math.random() - 0.5) * spin);
+    it.life = 0; it.max = life; it.size = size; it.grav = grav; it.drag = drag; it.grow = grow;
     this.mesh.setColorAt(i, color);
     this.mesh.instanceColor.needsUpdate = true;
   }
@@ -59,7 +61,7 @@ class ParticlePool {
       it.r.addScaledVector(it.spin, dt);
       // Scale out rather than fade: survives bright backgrounds.
       const k = 1 - it.life / it.max;
-      const s = it.size * (k < 0.3 ? k / 0.3 : 1);
+      const s = it.size * (k < 0.3 ? k / 0.3 : 1) * (1 + it.grow * (1 - k));
       tmpS.set(s, s, s);
       tmpM.compose(it.p, tmpQ.setFromEuler(tmpE.set(it.r.x, it.r.y, it.r.z)), tmpS);
       this.mesh.setMatrixAt(i, tmpM);
@@ -78,6 +80,13 @@ export class Fx {
     this.sparks = new ParticlePool(world, new THREE.OctahedronGeometry(1, 0),
       new THREE.MeshBasicMaterial({ toneMapped: false }), 500);
 
+    // Smoke: soft low-poly puffs that rise, swell and thin out.
+    this.smoke = new ParticlePool(world, new THREE.IcosahedronGeometry(1, 0),
+      new THREE.MeshLambertMaterial({ flatShading: true, transparent: true, opacity: 0.5, depthWrite: false }), 260);
+    this.smolders = new Map(); // key -> { pos, heat, acc, ember }
+    this.smokeColor = new THREE.Color();
+    this.emberColor = new THREE.Color(0xff7a2a).multiplyScalar(2);
+
     this.rings = [];
     const ringGeo = new THREE.RingGeometry(0.85, 1, 48);
     ringGeo.rotateX(-Math.PI / 2);
@@ -92,7 +101,7 @@ export class Fx {
 
     this.shots = [];
     const shotGeo = new THREE.SphereGeometry(0.22, 12, 8);
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 20; i++) {
       const m = new THREE.Mesh(shotGeo, new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false }));
       m.visible = false;
       world.add(m);
@@ -159,18 +168,41 @@ export class Fx {
     f.t = 0; f.peak = peak;
   }
 
-  // Arcing projectile. Resolves when it lands.
-  shoot(from, to, color, dur = 0.28) {
+  // Arcing projectile. Resolves when it lands. `hops` > 0 makes it walk
+  // (small bounces) instead of fly; `delay` holds it back before it sets off.
+  shoot(from, to, color, dur = 0.28, { h, hops = 0, scale = 1, delay = 0, trail = true } = {}) {
     return new Promise((resolve) => {
       const s = this.shots.find((x) => !x.alive) || this.shots[0];
+      s.resolve?.(); // a recycled shot still owes its caller a landing
       s.alive = true;
-      s.m.visible = true;
+      s.m.visible = false;
+      s.m.scale.setScalar(scale);
       s.m.material.color.set(color).multiplyScalar(2.5);
       s.from = from.clone(); s.to = to.clone();
-      s.t = 0; s.dur = dur; s.resolve = resolve;
-      s.h = 1.5 + from.distanceTo(to) * 0.25;
+      s.t = -delay; s.dur = dur; s.resolve = resolve;
+      s.h = h ?? 1.5 + from.distanceTo(to) * 0.25;
+      s.hops = hops; s.trail = trail;
     });
   }
+
+  // A column of troops marching from one territory to another.
+  march(from, to, color, n = 5, dur = 0.55) {
+    const hops = Math.max(2, Math.round(from.distanceTo(to) / 1.6));
+    const landed = [];
+    for (let i = 0; i < n; i++) {
+      landed.push(this.shoot(from, to, color, dur, { h: 0.6 + from.distanceTo(to) * 0.08, hops, scale: 0.55, delay: i * 0.07, trail: false }));
+    }
+    return Promise.all(landed);
+  }
+
+  // Battlefields keep smouldering: smoke (and embers, when it's hot) rises
+  // from `pos` and thins out over ~30 s. Repeated fighting stokes it.
+  smolder(key, pos, heat) {
+    const s = this.smolders.get(key);
+    if (s) { s.heat = Math.min(1, s.heat + heat); s.pos.copy(pos); return; }
+    this.smolders.set(key, { pos: pos.clone(), heat: Math.min(1, heat), acc: 0, ember: 0 });
+  }
+  clearSmolders() { this.smolders.clear(); }
 
   addShake(amount) {
     const a = this.reduced ? amount * 0.25 : amount;
@@ -180,6 +212,35 @@ export class Fx {
   addPunch(amount) { if (!this.reduced) this.punch = Math.min(0.06, Math.max(this.punch, amount)); }
   hitStop(ms) { this.freeze = Math.max(this.freeze, Math.min(0.11, ms / 1000)); }
 
+  updateSmolders(dt) {
+    if (!dt) return;
+    const rate = this.reduced ? 3 : 6; // puffs per second at full heat
+    for (const [key, s] of this.smolders) {
+      s.heat -= dt / 30;
+      if (s.heat <= 0) { this.smolders.delete(key); continue; }
+      s.acc += dt * rate * (0.25 + s.heat);
+      while (s.acc >= 1) {
+        s.acc -= 1;
+        const g = 0.22 + Math.random() * 0.1 + (1 - s.heat) * 0.2; // hot smoke is darker
+        this.smokeColor.setRGB(g, g * 0.97, g * 0.95);
+        tmpP.set(s.pos.x + (Math.random() - 0.5) * 0.8, s.pos.y + 0.3, s.pos.z + (Math.random() - 0.5) * 0.8);
+        // A steady breeze leans every column the same way.
+        tmpV.set(0.35 + (Math.random() - 0.5) * 0.4, 1.2 + Math.random() * 0.8, -0.1 + (Math.random() - 0.5) * 0.4);
+        this.smoke.spawn(tmpP, tmpV, this.smokeColor, {
+          life: 2.4 + Math.random() * 1.6, size: 0.28 + s.heat * 0.22, grav: -0.004, drag: 0.004, grow: -0.6, spin: 1.2,
+        });
+      }
+      if (s.heat > 0.45 && !this.reduced) {
+        s.ember += dt * 5 * s.heat;
+        while (s.ember >= 1) {
+          s.ember -= 1;
+          tmpV.set((Math.random() - 0.5) * 1.4, 1.5 + Math.random() * 2, (Math.random() - 0.5) * 1.4);
+          this.sparks.spawn(s.pos, tmpV, this.emberColor, { life: 0.9 + Math.random() * 0.8, size: 0.06 + Math.random() * 0.05, grav: -0.02, drag: 0.03 });
+        }
+      }
+    }
+  }
+
   // Real dt drives screen feel; sim dt (frozen during hit-stop) drives particles.
   update(realDt) {
     let dt = realDt;
@@ -187,6 +248,8 @@ export class Fx {
 
     this.debris.update(dt);
     this.sparks.update(dt);
+    this.smoke.update(dt);
+    this.updateSmolders(dt);
 
     for (const r of this.rings) {
       if (!r.m.visible) continue;
@@ -201,11 +264,14 @@ export class Fx {
     for (const s of this.shots) {
       if (!s.alive) continue;
       s.t += dt;
+      if (s.t < 0) continue;
+      s.m.visible = true;
       const k = Math.min(1, s.t / s.dur);
       s.m.position.lerpVectors(s.from, s.to, k);
       s.m.position.y += Math.sin(k * Math.PI) * s.h;
-      if (dt > 0) this.sparks.spawn(s.m.position, tmpV.set(0, 0.5, 0), s.m.material.color, { life: 0.18, size: 0.12, grav: 0 });
-      if (k >= 1) { s.alive = false; s.m.visible = false; s.resolve(); }
+      if (s.hops) s.m.position.y += Math.abs(Math.sin(k * Math.PI * s.hops)) * 0.35;
+      if (dt > 0 && s.trail) this.sparks.spawn(s.m.position, tmpV.set(0, 0.5, 0), s.m.material.color, { life: 0.18, size: 0.12, grav: 0 });
+      if (k >= 1) { s.alive = false; s.m.visible = false; const r = s.resolve; s.resolve = null; r(); }
     }
 
     for (const f of this.flashes) {
